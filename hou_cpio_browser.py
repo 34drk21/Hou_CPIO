@@ -14,6 +14,13 @@ CONTEXTS = ("sop", "vop", "dop", "obj", "rop", "shop", "chop", "cop2", "lop", "t
 DEFAULT_LIBRARY_PATH = r"Z:\hou_cpio_library"
 
 
+def normalize_context(value):
+    context = (value or "").strip().lower()
+    if context == "object":
+        return "obj"
+    return context
+
+
 def parse_time(value):
     if not value:
         return None
@@ -54,7 +61,7 @@ def context_from_path(path):
     if "cpio" in parts:
         index = parts.index("cpio")
         if index + 1 < len(parts):
-            return parts[index + 1]
+            return normalize_context(parts[index + 1])
     return ""
 
 
@@ -298,7 +305,7 @@ class HouCpioBrowser(QtWidgets.QDialog):
                     if meta_path.is_file() and is_within(meta_path, cpio_root)
                     else {}
                 )
-                context = meta.get("context") or context_from_path(path)
+                context = normalize_context(meta.get("context")) or context_from_path(path)
                 thumb = thumbnail_for(root, path, meta)
                 self.assets.append({
                     "path": path,
@@ -441,7 +448,11 @@ class HouCpioBrowser(QtWidgets.QDialog):
             pane = hou.ui.paneTabOfType(hou.paneTabType.NetworkEditor)
             parent = pane.pwd() if pane else hou.node("/obj")
             expected = asset["context"]
-            actual = parent.childTypeCategory().name().lower() if parent.childTypeCategory() else ""
+            actual = (
+                normalize_context(parent.childTypeCategory().name())
+                if parent.childTypeCategory()
+                else ""
+            )
             if expected and actual != expected:
                 hou.ui.displayMessage(
                     "Open a {} Network Editor before loading this CPIO.".format(expected.upper())

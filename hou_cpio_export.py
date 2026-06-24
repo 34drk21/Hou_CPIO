@@ -16,6 +16,13 @@ DEFAULT_DAYS = 7
 DEFAULT_LIBRARY_PATH = r"Z:\hou_cpio_library"
 
 
+def normalize_context(value):
+    context = (value or "").strip().lower()
+    if context == "object":
+        return "obj"
+    return context
+
+
 def clean_name(value):
     value = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", value.strip())
     value = re.sub(r"\s+", "_", value).strip(" ._")
@@ -30,7 +37,7 @@ def clean_name(value):
 
 def node_context(node):
     try:
-        return node.type().category().name().lower()
+        return normalize_context(node.type().category().name())
     except Exception:
         return "unknown"
 

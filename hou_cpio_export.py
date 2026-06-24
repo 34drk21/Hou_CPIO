@@ -18,7 +18,7 @@ DEFAULT_LIBRARY_PATH = r"Z:\hou_cpio_library"
 
 def normalize_context(value):
     context = (value or "").strip().lower()
-    if context == "object":
+    if context in {"obj", "object", "object network", "objectnetwork"}:
         return "obj"
     return context
 
@@ -138,7 +138,6 @@ class HouCpioExport(QtWidgets.QDialog):
         self._overlay = None
         self._build_ui()
         self.path_edit.setText(DEFAULT_LIBRARY_PATH)
-        self._load_clipboard()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -167,6 +166,11 @@ class HouCpioExport(QtWidgets.QDialog):
         keep_row.addWidget(self.permanent)
         keep_row.addStretch()
         form.addRow("Retention", keep_row)
+
+        self.note_edit = QtWidgets.QPlainTextEdit()
+        self.note_edit.setPlaceholderText("Write a memo for this CPIO.")
+        self.note_edit.setMaximumHeight(96)
+        form.addRow("Memo", self.note_edit)
         layout.addLayout(form)
 
         self.preview = QtWidgets.QLabel("No image\nBrowser will show a context placeholder.")
@@ -176,13 +180,10 @@ class HouCpioExport(QtWidgets.QDialog):
         layout.addWidget(self.preview, 1)
 
         image_row = QtWidgets.QHBoxLayout()
-        clipboard = QtWidgets.QPushButton("Use Clipboard")
-        clipboard.clicked.connect(self._load_clipboard)
         screenshot = QtWidgets.QPushButton("Screenshot Area")
         screenshot.clicked.connect(self._start_capture)
         clear = QtWidgets.QPushButton("Clear Image")
         clear.clicked.connect(self._clear_image)
-        image_row.addWidget(clipboard)
         image_row.addWidget(screenshot)
         image_row.addWidget(clear)
         layout.addLayout(image_row)
@@ -215,11 +216,6 @@ class HouCpioExport(QtWidgets.QDialog):
         if hasattr(self, "_image") and hasattr(self, "preview") and not self._image.isNull():
             self._set_image(self._image)
 
-    def _load_clipboard(self):
-        image = QtWidgets.QApplication.clipboard().image()
-        if not image.isNull():
-            self._set_image(QtGui.QPixmap.fromImage(image))
-
     def _clear_image(self):
         self._set_image(QtGui.QPixmap())
 
@@ -249,6 +245,25 @@ class HouCpioExport(QtWidgets.QDialog):
         meta = cpio.with_suffix(".json")
         thumb = root / "thumbs" / (base + ".png")
         return cpio, meta, thumb
+
+    def _thumbnail_image(self):
+        canvas = QtGui.QPixmap(640, 360)
+        canvas.fill(QtGui.QColor("#202328"))
+        if self._image.isNull():
+            return canvas
+        scaled = self._image.scaled(
+            canvas.size(),
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation,
+        )
+        painter = QtGui.QPainter(canvas)
+        try:
+            x = (canvas.width() - scaled.width()) // 2
+            y = (canvas.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+        finally:
+            painter.end()
+        return canvas
 
     def _export(self):
         nodes = hou.selectedNodes()
@@ -303,12 +318,7 @@ class HouCpioExport(QtWidgets.QDialog):
             parent.saveItemsToFile(nodes, str(temporary_cpio), save_hda_fallbacks=False)
             thumb_rel = None
             if not self._image.isNull():
-                image = self._image.scaled(
-                    960, 540, QtCore.Qt.KeepAspectRatioByExpanding, QtCore.Qt.SmoothTransformation
-                )
-                x = max(0, (image.width() - 960) // 2)
-                y = max(0, (image.height() - 540) // 2)
-                image = image.copy(x, y, min(960, image.width()), min(540, image.height()))
+                image = self._thumbnail_image()
                 if not image.save(str(temporary_thumb), "PNG"):
                     raise RuntimeError("Could not save thumbnail.")
                 thumb_rel = thumb.relative_to(root).as_posix()
@@ -326,6 +336,7 @@ class HouCpioExport(QtWidgets.QDialog):
                 "expires_at": None if permanent else utc_text(expires),
                 "permanent": permanent,
                 "thumbnail_path": thumb_rel,
+                "note": self.note_edit.toPlainText(),
             }
             temporary_meta.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2),
